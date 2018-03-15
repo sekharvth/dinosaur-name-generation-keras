@@ -9,28 +9,23 @@ from keras import backend as K
 
 
 
-X, Y, n_values, indices_values = load_music_utils()
-print('shape of X:', X.shape)
-print('number of training examples:', X.shape[0])
-print('Tx (length of sequence):', X.shape[1])
-print('total # of unique values:', n_values)
-print('Shape of Y:', Y.shape)
+X, Y, vocab_size = load_data()
 
-def one_hot(x):
+def one_hot(x, vocab_size):
     x = K.argmax(x)
-    x = tf.one_hot(x, 78) 
+    x = tf.one_hot(x, vocab_size) 
     x = RepeatVector(1)(x)
     return x
 
 n_a = 64 
 
-reshapor = Reshape((1, 78))                        
+reshapor = Reshape((1, vocab_size))                        
 LSTM_cell = LSTM(n_a, return_state = True)        
-densor = Dense(n_values, activation='softmax')     
+densor = Dense(vocab_size, activation='softmax')     
 
-def djmodel(Tx, n_a, n_values):
+def djmodel(Tx, n_a, vocab_size):
   
-    X = Input(shape=(Tx, n_values))
+    X = Input(shape=(Tx, vocab_size))
     a0 = Input(shape=(n_a,), name='a0')
     c0 = Input(shape=(n_a,), name='c0')
     a = a0
@@ -56,24 +51,24 @@ def djmodel(Tx, n_a, n_values):
     return model
 
 
-model = djmodel(Tx = 30 , n_a = 64, n_values = 78)
+model = djmodel(Tx = 30 , n_a = 64, vocab_size = 78)
 
 opt = Adam(lr=0.01, beta_1=0.9, beta_2=0.999, decay=0.01)
 
 model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['accuracy'])
 
 
-m = 60
+m = num_examples
 a0 = np.zeros((m, n_a))
 c0 = np.zeros((m, n_a))
 
 model.fit([X, a0, c0], list(Y), epochs=100)
 
 
-def inference_model_1(LSTM_cell, densor, n_values = 78, n_a = 64, Ty = 100):
+def inference_model_1(LSTM_cell, densor, vocab_size = 78, n_a = 64, Ty = 100):
    
    
-    x0 = Input(shape=(1, n_values))
+    x0 = Input(shape=(1, vocab_size))
     
     a0 = Input(shape=(n_a,), name='a0')
     c0 = Input(shape=(n_a,), name='c0')
@@ -98,7 +93,7 @@ def inference_model_1(LSTM_cell, densor, n_values = 78, n_a = 64, Ty = 100):
     return inference_model
 
 
-inference_model = inference_model_1(LSTM_cell, densor, n_values = 78, n_a = 64, Ty = 50)
+inference_model = inference_model_1(LSTM_cell, densor, vocab_size = 78, n_a = 64, Ty = 50)
 
 
 x_initializer = np.zeros((1, 1, 78))
