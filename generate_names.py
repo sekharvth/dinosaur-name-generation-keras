@@ -1,5 +1,5 @@
 # The code that follows is vaguely similar to the model in the seq2seq implementation of the simple chatbot I developed, which can be 
-# found here: 
+# found here: https://github.com/sekharvth/simple-chatbot-keras
 
 # import necessary packages
 import numpy as np
@@ -27,7 +27,7 @@ X, Y, vocab_size = context, final_target, len(char_to_index)
 
 # for use later on during the inference mode. Here, we just use the one-hot encodings as inputs, which is what the function below does. 
 def one_hot(x, vocab_size):
-    x = K.argmax(x)
+    x = np.random.choice(a = vocab_size, p = x.ravel())
     x = tf.one_hot(x, vocab_size) 
 # the RepeatVector statement is used to change x into 3 dimensions. Right now, x is of shape (num_examples, vocab_size).
 # But in the inference model defined later on, this x is to be fed as input for the next time step, whose model architecture 
@@ -143,7 +143,7 @@ def inference_model_1(LSTM_cell, densor, vocab_size, n_a):
 inference_model = inference_model_1(LSTM_cell, densor, vocab_size, n_a)
 
 # initialise variables to pass as input
-x_initialiser = np.zeros((1, 1, 78))
+x_initialiser = np.zeros((1, 1, vocab_size))
 a_initialiser = np.zeros((1, n_a))
 c_initialiser = np.zeros((1, n_a))
 
@@ -168,5 +168,3 @@ indices = indices.swapaxes(0,1)
 # join the characters in the output to form a legible answer
 answer = ''.join([index_to_char[i] for i in indices[0]])
 
-# NOTE: Since we use argmax() in both training and inference, the outputs will be constant for the same initial input. To generate
-# different names each time, instead of argmax(), random sampling from the softmax layer can be used, both in training and inference.
