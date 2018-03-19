@@ -11,20 +11,21 @@ from keras.optimizers import Adam
 from keras import backend as K
 
 # load data
-context = np.load('context_indexes_char_level.npy')
-final_target = np.load('target_indexes_char_level.npy')
+context = np.load('dino_names_char_level.npy')
+final_target = np.load('dino_names_char_level.npy')
 with open('dictionary_char_level.pkl', 'rb') as f:
-    word_to_index = pickle.load(f)
+    char_to_index = pickle.load(f)
 with open('reverse_dictionary_char_level.pkl', 'rb') as f:
-    index_to_word = pickle.load(f)
+    index_to_char = pickle.load(f)
 
-X, Y, vocab_size = context, final_target, len(word_to_index)
-# X is naturally, the input data, and of shape (num_examples, max_length_of_sentence, vocab_size)
-# Y is the output, of shape (max_length_of_sentence, num_examples, vocab_size). The explanation for this difference in shapes b/w 
-# input and output is given later on.
+X, Y, vocab_size = context, final_target, len(char_to_index)
+# X is naturally, the input data(dinosaur names). It is of shape (num_examples, dino_name_length, vocab_size). The name lenghts can be
+# different in each example, as we use a for loop here, and no padding (which makes all examples same length) is required.
+# Y is the same as X, but shifted on time step to the left, and ends with a 'EOS' tag. 
+# It is of shape (dino_name_length, num_examples, vocab_size). 
+# The explanation for this difference in shapes b/w input and output is given later on.
 
-# for use later on. In the seq2seq models, we use the embeddings of words as input to the model. But here, we just use the one-hot
-# encodings as inputs, which is what the function below does. 
+# for use later on during the inference mode. Here, we just use the one-hot encodings as inputs, which is what the function below does. 
 def one_hot(x, vocab_size):
     x = K.argmax(x)
     x = tf.one_hot(x, vocab_size) 
@@ -45,11 +46,12 @@ LSTM_cell = LSTM(n_a, return_state = True)
 densor = Dense(vocab_size, activation='softmax')     
 
 # model for training part. 
-# Tx refers to the number of characters in each sentence of the input, or alternatively, the number of time steps in the input.
+# Tx refers to the number of characters in each name in the input, or alternatively, the number of time steps in the input.
 def djmodel(Tx, n_a, vocab_size):
     
     # Define the inputs to the model
     X = Input(shape=(Tx, vocab_size))
+    
     # initial hidden states of the LSTM
     a0 = Input(shape=(n_a,), name='a0')
     c0 = Input(shape=(n_a,), name='c0')
@@ -60,9 +62,9 @@ def djmodel(Tx, n_a, vocab_size):
     # LSTM_cell), we use a list to append the output at each time step, to complete the answer sentence
     outputs = []
     
-    # loop through the characters in the input sentence
+    # loop through the characters in the input name
     for t in range(Tx):
-        # pick out the one-hot representation of the 't'th character in the sentence, using a Lambda function
+        # pick out the one-hot representation of the 't'th character in the name, using a Lambda function
         x = Lambda(lambda x: x[:, t, :])(X)
         
         # reshape it to be fit for input to the LSTM
@@ -77,17 +79,17 @@ def djmodel(Tx, n_a, vocab_size):
         
         # append the output to the outputs list. Now, 'out' is of shape (num_examples, vocab_size).
         # When appending it to the list 'outputs', ultimately the shape becomes (Tx, num_examples, vocab_size) and that is 
-        # why the actual target outputs have been made to be of shape (max_length_of_sentence, num_examples, vocab_size)
+        # why the actual target outputs have been made to be of shape (dino_name_length, num_examples, vocab_size)
         outputs.append(out)
         
-    # define the model instance, with the one-hot encoded input sentences and initial states to the LSTM as input, 
-    # and one-hot representations of the actual target sentences as outputs.
+    # define the model instance, with the one-hot encoded input names and initial states to the LSTM as input, 
+    # and one-hot representations of the actual target names as outputs.
     model = Model(inputs = [X, a0, c0], outputs = outputs)
     
     return model
 
 # call the djmodel function and assign it to 'model'
-model = djmodel(Tx = 30 , n_a = 300, vocab_size)
+model = djmodel(Tx , n_a = 300, vocab_size)
 
 # define the optimizer and compile the model
 opt = Adam(lr=0.01, beta_1=0.9, beta_2=0.999, decay=0.01)
@@ -100,10 +102,10 @@ a0 = np.zeros((m, n_a))
 c0 = np.zeros((m, n_a))
 
 # fit the model. Since the output is a list, we convert Y into a list too
-model.fit([X, a0, c0], list(Y), epochs=10000)
+model.fit([X, a0, c0], list(Y), epochs=50000)
 
 # define the function for the inference model
-def inference_model_1(LSTM_cell, densor, vocab_size=, n_a, Ty = max_length_of_sentence):
+def inference_model_1(LSTM_cell, densor, vocab_size, n_a):
    
     # define the inputs to the model
     x0 = Input(shape=(1, vocab_size))
@@ -116,8 +118,8 @@ def inference_model_1(LSTM_cell, densor, vocab_size=, n_a, Ty = max_length_of_se
     # empty list to store the outputs
     outputs = []
     
-    # loop over the characters in the target sentence (max sequence length)
-    for t in range(Ty):
+    # loop over the characters in the target name (max sequence length)
+    while (K.argmax(out) != index_to_char['EOS']):
         
         # pass the input to the LSTM cell(trained previoulsy, as it is a global layer), with the initial hidden states. 
         # Then re-initialize the hidden states for the next time step with the output states of the current time step
@@ -138,25 +140,33 @@ def inference_model_1(LSTM_cell, densor, vocab_size=, n_a, Ty = max_length_of_se
     return inference_model
 
 
-inference_model = inference_model_1(LSTM_cell, densor, vocab_size, n_a = 64, Ty)
+inference_model = inference_model_1(LSTM_cell, densor, vocab_size, n_a)
 
 # initialise variables to pass as input
-x_initializer = np.zeros((1, 1, 78))
-a_initializer = np.zeros((1, n_a))
-c_initializer = np.zeros((1, n_a))
+x_initialiser = np.zeros((1, 1, 78))
+a_initialiser = np.zeros((1, n_a))
+c_initialiser = np.zeros((1, n_a))
 
-def predict_and_sample(inference_model, x_initializer, a_initializer, c_initializer):
+# generate dinosaur names starting with 's'
+x_initialiser[0,0, char_to_index['s']] = 1
+
+def predict_and_sample(inference_model, x_initialiser, a_initialiser, c_initialiser):
     
     # predict the output sequence
-    pred = inference_model.predict([x_initializer, a_initializer, c_initializer])
+    pred = inference_model.predict([x_initialiser, a_initialiser, c_initialiser])
     
     # find the indexes of characters that have the greatest probability in each time steps output
     indices = np.argmax(pred, axis = -1)
    
     return indices
 
-indices = predict_and_sample(inference_model, x_initializer, a_initializer, c_initializer)
- 
+indices = predict_and_sample(inference_model, x_initialiser, a_initialiser, c_initialiser)
 
+# so that the shape changes from (dino_name_length, num_examples) to (num_examples, dino_name_length)
+indices = indices.swapaxes(0,1)
 
+# join the characters in the output to form a legible answer
+answer = ''.join([index_to_char[i] for i in indices[0]])
 
+# NOTE: Since we use argmax() in both training and inference, the outputs will be constant for the same initial input. To generate
+# different names each time, instead of argmax(), random sampling from the softmax layer can be used, both in training and inference.
